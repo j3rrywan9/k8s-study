@@ -511,3 +511,266 @@ The new `curl` command looks similar to:
 ```bash
 curl $APISERVER --cert encoded-cert --key encoded-key --cacert encoded-ca
 ```
+
+## Chapter 8 Kubernetes Building Blocks
+
+### Pods
+
+A [Pod](https://kubernetes.io/docs/concepts/workloads/pods/pod-overview/) is the smallest and simplest Kubernetes object.
+It is the unit of deployment in Kubernetes, which represents a single instance of the application.
+A Pod is a logical collection of one or more containers, which:
+* Are scheduled together on the same host with the Pod
+* Share the same network namespace
+* Have access to mount the same external storage (volumes)
+
+Pods are ephemeral in nature, and they do not have the capability to self-heal by themselves.
+That is the reason they are used with controllers which handle Pods' replication, fault tolerance, self-healing, etc.
+Examples of controllers are Deployments, ReplicaSets, ReplicationControllers, etc.
+We attach a nested Pod's specification to a controller object using the Pod Template, as we have seen in the previous section.
+
+Below is an example of a Pod object's configuration in YAML format:
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.15.11
+    ports:
+    - containerPort: 80
+```
+
+The `apiVersion` field must specify **v1** for the **Pod** object definition.
+The second required field is `kind` specifying the **Pod** object type.
+The third required field `metadata`, holds the object's name and label.
+The fourth required field `spec` marks the beginning of the block defining the desired state of the Pod object - also named the `PodSpec`.
+Our Pod creates a single container running the `nginx:1.15.11` image from Docker Hub.
+
+### Labels
+
+Labels are key-value pairs attached to Kubernetes objects (e.g. Pods, ReplicaSets).
+Labels are used to organize and select a subset of objects, based on the requirements in place.
+Many objects can have the same Label(s).
+Labels do not provide uniqueness to objects.
+Controllers use Labels to logically group together decoupled objects, rather than using objects' names or IDs.
+
+### Label Selectors
+
+### ReplicationControllers
+
+### ReplicaSets I
+
+A ReplicaSet is the next-generation ReplicationController.
+ReplicaSets support both equality- and set-based selectors, whereas ReplicationControllers only support equality-based Selectors.
+Currently, this is the only difference.
+
+With the help of the ReplicaSet, we can scale the number of Pods running a specific container application image.
+Scaling can be accomplished manually or through the use of an autoscaler.
+
+Next, you can see a graphical representation of a ReplicaSet, where we have set the replica count to 3 for a Pod.
+
+### ReplicaSets II
+
+### ReplicaSets III
+
+The ReplicaSet will detect that the current state is no longer matching the desired state.
+The ReplicaSet will create an additional Pod, thus ensuring that the current state matches the desired state.
+
+ReplicaSets can be used independently as Pod controllers but they only offer a limited set of features.
+A set of complementary features are provided by Deployments, the recommended controllers for the orchestration of Pods.
+Deployments manage the creation, deletion, and updates of Pods.
+A Deployment automatically creates a ReplicaSet, which then creates a Pod.
+There is no need to manage ReplicaSets and Pods separately, the Deployment will manage them on our behalf.
+
+### Deployments I
+
+Deployment objects provide declarative updates to Pods and ReplicaSets.
+The DeploymentController is part of the master node's controller manager, and it ensures that the current state always matches the desired state.
+It allows for seamless application updates and downgrades through `rollouts` and `rollbacks`, and it directly manages its ReplicaSets for application scaling. 
+
+### Deployments II
+
+### Deployments III
+
+### Namespaces
+
+If multiple users and teams use the same Kubernetes cluster we can partition the cluster into virtual sub-clusters using Namespaces.
+The names of the resources/objects created inside a Namespace are unique, but not across Namespaces in the cluster.
+
+To list all the Namespaces, we can run the following command:
+```bash
+kubectl get namespaces
+```
+
+Generally, Kubernetes creates four default Namespaces: kube-system, kube-public, kube-node-lease, and default.
+The kube-system Namespace contains the objects created by the Kubernetes system, mostly the control plane agents.
+The default Namespace contains the objects and resources created by administrators and developers.
+By default, we connect to the default Namespace.
+kube-public is a special Namespace, which is unsecured and readable by anyone, used for special purposes such as exposing public (non-sensitive) information about the cluster.
+The newest Namespace is kube-node-lease which holds node lease objects used for node heartbeat data.
+Good practice, however, is to create more Namespaces to virtualize the cluster for users and developer teams.
+
+With Resource Quotas, we can divide the cluster resources within Namespaces.
+We will briefly cover **resource** quotas in one of the future chapters.
+
+## Chapter 9 Authentication, Authorization, Admission Control
+
+### Authentication, Authorization, and Admission Control - Overview
+
+To access and manage any Kubernetes resource or object in the cluster, we need to access a specific API endpoint on the API server.
+Each access request goes through the following three stages:
+* Authentication
+Logs in a user.
+* Authorization
+Authorizes the API requests added by the logged-in user.
+* Admission Control
+Software modules that can modify or reject the requests based on some additional checks, like a pre-set **Quota**.
+
+### Authentication I
+
+## Chapter 10 Services
+
+### Service Discovery
+
+As Services are the primary mode of communication in Kubernetes, we need a way to discover them at runtime.
+Kubernetes supports two methods for discovering Services:
+* Environment Variables
+As soon as the Pod starts on any worker node, the kubelet daemon running on that node adds a set of environment variables in the Pod for all active Services.
+* DNS
+Kubernetes has an add-on for DNS, which creates a DNS record for each Service and its format is **my-svc.my-namespace.svc.cluster.local**.
+Services within the same Namespace find other Services just by their name.
+
+This is the most common and highly recommended solution.
+
+### ServiceType
+
+## Chapter 11 Deploying a Standalone Application
+
+### Liveness
+
+If a container in the Pod is running, but the application running inside this container is not responding to our requests, then that container is of no use to us.
+This kind of situation can occur, for example, due to application deadlock or memory pressure.
+In such a case, it is recommended to restart the container to make the application available.
+
+Rather than restarting it manually, we can use a **Liveness Probe**.
+Liveness probe checks on an application's health, and if the health check fails, `kubelet` restarts the affected container automatically.
+
+Liveness Probes can be set by defining:
+* Liveness command
+* Liveness HTTP request
+* TCP Liveness Probe
+
+We will discuss these three approaches in the next few sections.
+
+### Liveness Command
+
+### Readiness Probes
+
+## Chapter 12 Kubernetes Volume Management
+
+### Volumes
+
+As we know, containers running in Pods are ephemeral in nature.
+All data stored inside a container is deleted if the container crashes.
+However, the `kubelet` will restart it with a clean slate, which means that it will not have any of the old data.
+
+To overcome this problem, Kubernetes uses Volumes.
+A Volume is essentially a directory backed by a storage medium.
+The storage medium, content and access mode are determined by the Volume Type.
+
+In Kubernetes, a Volume is attached to a Pod and can be shared among the containers of that Pod.
+The Volume has the same life span as the Pod, and it outlives the containers of the Pod - this allows data to be preserved across container restarts.
+
+### Volume Types
+
+A directory which is mounted inside a Pod is backed by the underlying Volume Type.
+A Volume Type decides the properties of the directory, like size, content, default access modes, etc.
+Some examples of Volume Types are:
+
+* emptyDir
+An empty Volume is created for the Pod as soon as it is scheduled on the worker node.
+The Volume's life is tightly coupled with the Pod.
+If the Pod is terminated, the content of `emptyDir` is deleted forever.  
+* hostPath
+With the `hostPath` Volume Type, we can share a directory from the host to the Pod.
+If the Pod is terminated, the content of the Volume is still available on the host.
+* gcePersistentDisk
+With the `gcePersistentDisk` Volume Type, we can mount a Google Compute Engine (GCE) persistent disk into a Pod.
+* awsElasticBlockStore
+With the `awsElasticBlockStore` Volume Type, we can mount an AWS EBS Volume into a Pod. 
+* azureDisk
+With azureDisk we can mount a Microsoft Azure Data Disk into a Pod.
+* azureFile
+With azureFile we can mount a Microsoft Azure File Volume into a Pod.
+* cephfs
+With `cephfs`, an existing CephFS volume can be mounted into a Pod.
+When a Pod terminates, the volume is unmounted and the contents of the volume are preserved.
+* nfs
+With nfs, we can mount an NFS share into a Pod.
+* iscsi
+With iscsi, we can mount an iSCSI share into a Pod.
+* secret
+With the `secret` Volume Type, we can pass sensitive information, such as passwords, to Pods.
+We will take a look at an example in a later chapter.
+* configMap
+With `configMap` objects, we can provide configuration data, or shell commands and arguments into a Pod.
+* persistentVolumeClaim
+We can attach a `PersistentVolume` to a Pod using a `persistentVolumeClaim`.
+We will cover this in our next section. 
+
+You can learn more details about Volume Types in the [Kubernetes documentation](https://kubernetes.io/docs/concepts/storage/volumes/).
+
+### PersistentVolumes
+
+In a typical IT environment, storage is managed by the storage/system administrators.
+The end user will just receive instructions to use the storage but is not involved with the underlying storage management.
+
+In the containerized world, we would like to follow similar rules, but it becomes challenging, given the many Volume Types we have seen earlier.
+Kubernetes resolves this problem with the **PersistentVolume (PV)** subsystem, which provides APIs for users and administrators to manage and consume persistent storage.
+To manage the Volume, it uses the PersistentVolume API resource type, and to consume it, it uses the PersistentVolumeClaim API resource type.
+
+A Persistent Volume is a network-attached storage in the cluster, which is provisioned by the administrator.
+
+PersistentVolumes can be dynamically provisioned based on the StorageClass resource.
+A StorageClass contains pre-defined provisioners and parameters to create a PersistentVolume.
+Using PersistentVolumeClaims, a user sends the request for dynamic PV creation, which gets wired to the StorageClass resource.
+
+Some of the Volume Types that support managing storage using PersistentVolumes are:
+* GCEPersistentDisk
+* AWSElasticBlockStore
+* AzureFile
+* AzureDisk
+* CephFS
+* NFS
+* iSCSI
+
+For a complete list, as well as more details, you can check out the Kubernetes documentation.
+
+### PersistentVolumeClaims
+
+A PersistentVolumeClaim (PVC) is a request for storage by a user.
+Users request for PersistentVolume resources based on type, access mode, and size.
+There are three access modes: ReadWriteOnce (read-write by a single node), ReadOnlyMany (read-only by many nodes), and ReadWriteMany (read-write by many nodes).
+Once a suitable PersistentVolume is found, it is bound to a PersistentVolumeClaim.
+
+After a successful bound, the PersistentVolumeClaim resource can be used in a Pod.
+
+Once a user finishes its work, the attached PersistentVolumes can be released.
+The underlying PersistentVolumes can then be reclaimed (for an admin to verify and/or aggregate data), deleted (both data and volume are deleted), or recycled for future usage (only data is deleted). 
+
+To learn more, you can check out the [Kubernetes documentation](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims).
+
+### Container Storage Interface (CSI)
+
+Container orchestrators like Kubernetes, Mesos, Docker or Cloud Foundry used to have their own methods of managing external storage using Volumes.
+For storage vendors, it was challenging to manage different Volume plugins for different orchestrators.
+Storage vendors and community members from different orchestrators started working together to standardize the Volume interface;
+a volume plugin built using a standardized CSI designed to work on different container orchestrators.
+You can find CSI specifications here.
+
+Between Kubernetes releases v1.9 and v1.13 CSI matured from alpha to stable support, which makes installing new CSI-compliant Volume plugins very easy.
+With CSI, third-party storage providers can develop solutions without the need to add them into the core Kubernetes codebase. 
