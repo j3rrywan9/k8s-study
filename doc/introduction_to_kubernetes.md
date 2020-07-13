@@ -730,6 +730,18 @@ Controllers use Labels to logically group together decoupled objects, rather tha
 
 ### Label Selectors
 
+Controllers use Label Selectors to select a subset of objects.
+Kubernetes supports two types of Selectors:
+* Equality-Based Selectors
+Equality-Based Selectors allow filtering of objects based on Label keys and values.
+Matching is achieved using the =, == (equals, used interchangeably), or != (not equals) operators.
+For example, with `env==dev` or `env=dev` we are selecting the objects where the `env` Label key is set to value `dev`. 
+* Set-Based Selectors
+Set-Based Selectors allow filtering of objects based on a set of values.
+We can use `in`, `notin` operators for Label values, and `exist`/`does not exist` operators for Label keys.
+For example, with `env in (dev,qa)` we are selecting objects where the env Label is set to either dev or qa;
+with `!app` we select objects with no Label key app.
+
 ### ReplicationControllers
 
 ### ReplicaSets I
@@ -804,6 +816,24 @@ Software modules that can modify or reject the requests based on some additional
 
 ## Chapter 10 Services
 
+### Connecting Users to Pods
+
+To access the application, a user/client needs to connect to the Pods.
+As Pods are ephemeral in nature, resources like IP addresses allocated to it cannot be static.
+Pods could be terminated abruptly or be rescheduled based on existing requirements.
+
+Let's take, for example, a scenario in which a user/client is connected to a Pod using its IP address.
+
+Unexpectedly, the Pod to which the user/client is connected is terminated, and a new Pod is created by the controller.
+The new Pod will have a new IP address, which will not be known automatically to the user/client of the earlier Pod.
+
+To overcome this situation, Kubernetes provides a higher-level abstraction called Service, which logically groups Pods and defines a policy to access them.
+This grouping is achieved via Labels and Selectors.
+
+### Services
+
+Services can expose single Pods, ReplicaSets, Deployments, DaemonSets, and StatefulSets.
+
 ### Service Discovery
 
 As Services are the primary mode of communication in Kubernetes, we need a way to discover them at runtime.
@@ -817,6 +847,20 @@ Services within the same Namespace find other Services just by their name.
 This is the most common and highly recommended solution.
 
 ### ServiceType
+
+While defining a Service, we can also choose its access scope.
+We can decide whether the Service:
+* Is only accessible within the cluster
+* Is accessible from within the cluster and the external world
+* Maps to an entity which resides either inside or outside the cluster
+
+Access scope is decided by ServiceType, which can be configured when creating the Service.
+
+#### ClusterIP and NodePort
+
+**ClusterIP** is the default ServiceType.
+A Service receives a Virtual IP address, known as its ClusterIP.
+This Virtual IP address is used for communicating with the Service and is accessible only within the cluster. 
 
 ## Chapter 11 Deploying a Standalone Application
 
@@ -944,3 +988,171 @@ You can find CSI specifications here.
 
 Between Kubernetes releases v1.9 and v1.13 CSI matured from alpha to stable support, which makes installing new CSI-compliant Volume plugins very easy.
 With CSI, third-party storage providers can develop solutions without the need to add them into the core Kubernetes codebase. 
+
+## Chapter 13 ConfigMaps and Secrets
+
+### ConfigMaps
+
+ConfigMaps allow us to decouple the configuration details from the container image.
+Using ConfigMaps, we pass configuration data as key-value pairs, which are consumed by Pods or any other system components and controllers, in the form of environment variables, sets of commands and arguments, or volumes.
+We can create ConfigMaps from literal values, from configuration files, from one or more files or directories.
+
+#### Create a ConfigMap from Literal Values and Display Its Details
+
+A ConfigMap can be created with the `kubectl create` command, and we can display its details using the `kubectl get` command.
+
+Create the ConfigMap
+```bash
+kubectl create configmap my-config --from-literal=key1=value1 --from-literal=key2=value2
+```
+
+Display the ConfigMap Details for `my-config`
+```bash
+kubectl get configmaps my-config -o yaml
+```
+
+With the `-o yaml` option, we are requesting the `kubectl` command to spit the output in the YAML format.
+As we can see, the object has the `ConfigMap kind`, and it has the key-value pairs inside the data field.
+The name of `ConfigMap` and other details are part of the `metadata` field.
+
+#### Create a ConfigMap from a Configuration File
+
+#### Create a ConfigMap from a File
+
+### Secrets
+
+In this scenario, the Secret object can help by allowing us to encode the sensitive information before sharing it.
+With Secrets, we can share sensitive information like passwords, tokens, or keys in the form of key-value pairs, similar to ConfigMaps;
+thus, we can control how the information in a Secret is used, reducing the risk for accidental exposures.
+In Deployments or other resources, the Secret object is referenced, without exposing its content.
+
+It is important to keep in mind that the Secret data is stored as plain text inside etcd, therefore administrators must limit access to the API server and etcd.
+A newer feature allows for Secret data to be encrypted at rest while it is stored in etcd;
+a feature which needs to be enabled at the API server level.
+
+#### Create a Secret from Literal and Display Its Details
+
+#### Create a Secret Manually
+
+#### Create a Secret from a File and Display Its Details
+
+#### Use Secrets Inside Pods
+
+Secrets are consumed by Containers in Pods as mounted data volumes, or as environment variables, and are referenced in their entirety or specific key-values.
+
+##### Using Secrets as Environment Variables
+
+Below we reference only the `password` key of the `my-password` Secret and assign its value to the `WORDPRESS_DB_PASSWORD` environment variable:
+```yaml
+....
+spec:
+  containers:
+  - image: wordpress:4.7.3-apache
+    name: wordpress
+    env:
+    - name: WORDPRESS_DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: my-password
+          key: password
+....
+```
+
+##### Using Secrets as Files from a Pod
+
+We can also mount a Secret as a Volume inside a Pod.
+
+## Chapter 14 Ingress
+
+## Chapter 15 Advanced Topics
+
+### Quota Management
+
+When there are many users sharing a given Kubernetes cluster, there is always a concern for fair usage.
+A user should not take undue advantage.
+To address this concern, administrators can use the ResourceQuota API resource, which provides constraints that limit aggregate resource consumption per Namespace.
+
+We can set the following types of quotas per Namespace:
+* Compute Resource Quota
+We can limit the total sum of compute resources (CPU, memory, etc.) that can be requested in a given Namespace.
+* Storage Resource Quota
+We can limit the total sum of storage resources (PersistentVolumeClaims, requests.storage, etc.) that can be requested.
+* Object Count Quota
+We can restrict the number of objects of a given type (pods, ConfigMaps, PersistentVolumeClaims, ReplicationControllers, Services, Secrets, etc.).
+
+### Autoscaling
+
+While it is fairly easy to manually scale a few Kubernetes objects, this may not be a practical solution for a production-ready cluster where hundreds or thousands of objects are deployed.
+We need a dynamic scaling solution which adds or removes objects from the cluster based on resource utilization, availability, and requirements. 
+
+Autoscaling can be implemented in a Kubernetes cluster via controllers which periodically adjust the number of running objects based on single, multiple, or custom metrics.
+There are various types of autoscalers available in Kubernetes which can be implemented individually or combined for a more robust autoscaling solution:
+* Horizontal Pod Autoscaler (HPA) 
+HPA is an algorithm based controller API resource which automatically adjusts the number of replicas in a ReplicaSet, Deployment or Replication Controller based on CPU utilization.
+* Vertical Pod Autoscaler (VPA) 
+VPA automatically sets Container resource requirements (CPU and memory) in a Pod and dynamically adjusts them in runtime, based on historical utilization data, current resource availability and real-time events.
+* Cluster Autoscaler 
+Cluster Autoscaler automatically re-sizes the Kubernetes cluster when there are insufficient resources available for new Pods expecting to be scheduled or when there are underutilized nodes in the cluster.
+
+### DaemonSets
+
+In cases when we need to collect monitoring data from all nodes, or to run a storage daemon on all nodes, then we need a specific type of Pod running on all nodes at all times.
+A DaemonSet is the object that allows us to do just that.
+It is a critical controller API resource for multi-node Kubernetes clusters.
+The `kube-proxy` agent running as a Pod on every single node in the cluster is managed by a `DaemonSet`.  
+
+Whenever a node is added to the cluster, a Pod from a given DaemonSet is automatically created on it.
+Although it ensures an automated process, the DaemonSet's Pods are placed on nodes by the cluster's default Scheduler.
+When the node dies or it is removed from the cluster, the respective Pods are garbage collected.
+If a DaemonSet is deleted, all Pods it created are deleted as well.
+
+A newer feature of the DaemonSet resource allows for its Pods to be scheduled only on specific nodes by configuring `nodeSelectors` and node `affinity` rules.
+Similar to Deployment resources, DaemonSets support rolling updates and rollbacks. 
+
+### StatefulSets
+
+### Kubernetes Federation
+
+### Custom Resources
+
+In Kubernetes, a **resource** is an API endpoint which stores a collection of API objects.
+For example, a Pod resource contains all the Pod objects.
+
+Although in most cases existing Kubernetes resources are sufficient to fulfill our requirements, we can also create new resources using **custom resources**.
+With custom resources, we don't have to modify the Kubernetes source.
+
+Custom resources are dynamic in nature, and they can appear and disappear in an already running cluster at any time.
+
+To make a resource declarative, we must create and install a **custom controller**, which can interpret the resource structure and perform the required actions.
+Custom controllers can be deployed and managed in an already running cluster.
+
+There are two ways to add custom resources:
+* Custom Resource Definitions (CRDs)
+This is the easiest way to add custom resources and it does not require any programming knowledge.
+However, building the custom controller would require some programming.
+* API Aggregation
+For more fine-grained control, we can write API Aggregators.
+They are subordinate API servers which sit behind the primary API server.
+The primary API server acts as a proxy for all incoming API requests - it handles the ones based on its capabilities and proxies over the other requests meant for the subordinate API servers.
+
+### Helm
+
+To deploy an application, we use different Kubernetes manifests, such as Deployments, Services, Volume Claims, Ingress, etc.
+Sometimes, it can be tiresome to deploy them one by one. We can bundle all those manifests after templatizing them into a well-defined format, along with other metadata.
+Such a bundle is referred to as Chart.
+These Charts can then be served via repositories, such as those that we have for rpm and deb packages. 
+
+Helm is a package manager (analogous to `yum` and `apt` for Linux) for Kubernetes, which can install/update/delete those Charts in the Kubernetes cluster.
+
+Helm has two components:
+* A client called *helm*, which runs on your user's workstation
+* A server called *tiller*, which runs inside your Kubernetes cluster.
+
+The client *helm* connects to the server *tiller* to manage Charts.
+Charts submitted for Kubernetes are available here.
+
+### Security Contexts and Pod Security Policies
+
+### Network Policies
+
+### Monitoring and Logging
