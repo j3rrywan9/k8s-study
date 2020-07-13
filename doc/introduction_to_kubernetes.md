@@ -17,6 +17,46 @@ While there are solutions to minimize downtimes to customers by setting up monol
 
 ### The Modern Microservice
 
+**Microservices** can be deployed individually on separate servers provisioned with fewer resources - only what is required by each service and the host system itself.
+
+Microservices-based architecture is aligned with Event-driven Architecture and Service-Oriented Architecture (SOA) principles, where complex applications are composed of small independent processes which communicate with each other through APIs over a network.
+APIs allow access by other internal services of the same application or external, third-party services and applications.
+
+Each microservice is developed and written in a modern programming language, selected to be the best suitable for the type of service and its business function.
+This offers a great deal of flexibility when matching microservices with specific hardware when required, allowing deployments on inexpensive commodity hardware.
+
+Although the distributed nature of microservices adds complexity to the architecture, one of the greatest benefits of microservices is scalability.
+With the overall application becoming modular, each microservice can be scaled individually, either manually or automated through demand-based autoscaling.
+
+Seamless upgrades and patching processes are other benefits of microservices architecture.
+There is virtually no downtime and no service disruption to clients because upgrades are rolled out seamlessly - one service at a time, rather than having to re-compile, re-build and re-start an entire monolithic application.
+As a result, businesses are able to develop and roll-out new features and updates a lot faster, in an agile approach, having separate teams focusing on separate features, thus being more productive and cost-effective.
+
+### Refactoring
+
+### Challenges
+
+The refactoring path from a monolith to microservices is not smooth and without challenges.
+Not all monoliths are perfect candidates for refactoring, while some may not even "survive" such a modernization phase.
+When deciding whether a monolith is a possible candidate for refactoring, there are many possible issues to consider.
+
+When considering a legacy Mainframe based system, written in older programming languages - Cobol or Assembler, it may be more economical to just re-build it from the ground up as a cloud-native application.
+A poorly designed legacy application should be re-designed and re-built from scratch following modern architectural patterns for microservices and even containers.
+Applications tightly coupled with data stores are also poor candidates for refactoring.
+
+Once the monolith survived the refactoring phase, the next challenge is to design mechanisms or find suitable tools to keep alive all the decoupled modules to ensure application resiliency as a whole. 
+
+Choosing runtimes may be another challenge.
+If deploying many modules on a single physical or virtual server, chances are that different libraries and runtime environment may conflict with one another causing errors and failures.
+This forces deployments of single modules per servers in order to separate their dependencies - not an economical way of resource management, and no real segregation of libraries and runtimes, as each server also has an underlying Operating System running with its libraries, thus consuming server resources - at times the OS consuming more resources than the application module itself.
+
+Ultimately application containers came along, providing encapsulated lightweight runtime environments for application modules.
+Containers promised consistent software environments for developers, testers, all the way from Development to Production.
+Wide support of containers ensured application portability from physical bare-metal to Virtual Machines, but this time with multiple applications deployed on the very same server, each running in their own execution environments isolated from one another, thus avoiding conflicts, errors, and failures.
+Other features of containerized application environments are higher server utilization, individual module scalability, flexibility, interoperability and easy integration with automation tools.
+
+### Success Stories
+
 ## Chapter 2 Container Orchestration
 
 ### What Are Containers?
