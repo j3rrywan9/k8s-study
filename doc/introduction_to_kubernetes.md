@@ -139,13 +139,71 @@ These shall be explored in one of the later chapters.
 
 ### What Is Kubernetes?
 
+According to the Kubernetes website,
+> "Kubernetes is an open-source system for automating deployment, scaling, and management of containerized applications."
+
+**Kubernetes** comes from the Greek word **κυβερνήτης**, which means helmsman or ship pilot.
+With this analogy in mind, we can think of Kubernetes as the pilot on a ship of containers.
+
+Kubernetes is also referred to as **k8s**, as there are 8 characters between k and s.
+
+Kubernetes is highly inspired by the Google Borg system, a container orchestrator for its global operations for more than a decade.
+It is an open source project written in the Go language and licensed under the Apache License, Version 2.0.
+
+Kubernetes was started by Google and, with its v1.0 release in July 2015, Google donated it to the Cloud Native Computing Foundation (CNCF).
+We will talk more about CNCF later in this chapter.
+
+New Kubernetes versions are released in 3 months cycles.
+The current stable version is 1.14 (as of May 2019).
+
 ### From Borg to Kubernetes
 
 ### Kubernetes Features I
 
+Kubernetes offers a very rich set of features for container orchestration.
+Some of its fully supported features are:
+* Automatic bin packing
+Kubernetes automatically schedules containers based on resource needs and constraints, to maximize utilization without sacrificing availability.
+* Self-healing
+Kubernetes automatically replaces and reschedules containers from failed nodes.
+It kills and restarts containers unresponsive to health checks, based on existing rules/policy. It also prevents traffic from being routed to unresponsive containers.
+* Horizontal scaling
+With Kubernetes applications are scaled manually or automatically based on CPU or custom metrics utilization.
+* Service discovery and Load balancing
+Containers receive their own IP addresses from Kubernetes, while it assigns a single Domain Name System (DNS) name to a set of containers to aid in load-balancing requests across the containers of the set.
+
 ### Kubernetes Features II
 
+Some other fully supported Kubernetes features are:
+* Automated rollouts and rollbacks
+Kubernetes seamlessly rolls out and rolls back application updates and configuration changes, constantly monitoring the application's health to prevent any downtime.
+* Secret and configuration management
+Kubernetes manages secrets and configuration details for an application separately from the container image, in order to avoid a re-build of the respective image.
+Secrets consist of confidential information passed to the application without revealing the sensitive content to the stack configuration, like on GitHub.
+* Storage orchestration
+Kubernetes automatically mounts software-defined storage (SDS) solutions to containers from local storage, external cloud providers, or network storage systems.
+* Batch execution
+Kubernetes supports batch execution, long-running jobs, and replaces failed containers.
+
+There are many other features besides the ones we just mentioned, and they are currently in alpha/beta phase.
+They will add great value to any Kubernetes deployment once they become stable features.
+For example, support for role-based access control (RBAC) is stable as of the Kubernetes 1.8 release.
+
 ### Why Use Kubernetes?
+
+In addition to its fully-supported features, Kubernetes is also portable and extensible.
+It can be deployed in many environments such as local or remote Virtual Machines, bare metal, or in public/private/hybrid/multi-cloud setups.
+It supports and it is supported by many 3rd party open source tools which enhance Kubernetes' capabilities and provide a feature-rich experience to its users.
+
+Kubernetes' architecture is modular and pluggable.
+Not only that it orchestrates modular, decoupled microservices type applications, but also its architecture follows decoupled microservices patterns.
+Kubernetes' functionality can be extended by writing custom resources, operators, custom APIs, scheduling rules or plugins.
+
+For a successful open source project, the community is as important as having great code.
+Kubernetes is supported by a thriving community across the world. It has more than 2,000 contributors, who, over time, have pushed over 77,000 commits.
+There are meet-up groups in different cities and countries which meet regularly to discuss Kubernetes and its ecosystem.
+There are Special Interest Groups (SIGs), which focus on special topics, such as scaling, bare metal, networking, etc.
+We will talk more about them in our last chapter, Kubernetes Communities.
 
 ### Cloud Native Computing Foundation (CNCF)
 
