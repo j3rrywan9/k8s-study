@@ -211,6 +211,32 @@ We will talk more about them in our last chapter, Kubernetes Communities.
 
 ## Chapter 4 Kubernetes Architecture
 
+### Kubernetes Architecture
+
+At a very high level, Kubernetes has the following main components:
+* One or more **master nodes**
+* One or more **worker nodes**
+* Distributed key-value store, such as **etcd**
+
+### Master Node
+
+The master node provides a running environment for the control plane responsible for managing the state of a Kubernetes cluster, and it is the brain behind all operations inside the cluster.
+The control plane components are agents with very distinct roles in the cluster's management.
+In order to communicate with the Kubernetes cluster, users send requests to the master node via a Command Line Interface (CLI) tool, a Web User-Interface (Web UI) Dashboard, or Application Programming Interface (API).
+
+It is important to keep the control plane running at all costs.
+Losing the control plane may introduce downtimes, causing service disruption to clients, with possible loss of business.
+To ensure the control plane's fault tolerance, master node replicas are added to the cluster, configured in High-Availability (HA) mode.
+While only one of the master node replicas actively manages the cluster, the control plane components stay in sync across the master node replicas.
+This type of configuration adds resiliency to the cluster's control plane, should the active master node replica fail.
+
+To persist the Kubernetes cluster's state, all cluster configuration data is saved to etcd.
+However, etcd is a distributed key-value store which only holds cluster state related data, no client workload data.
+etcd is configured on the master node (stacked) or on its dedicated host (external) to reduce the chances of data store loss by decoupling it from the control plane agents.
+
+When stacked, HA master node replicas ensure etcd resiliency as well.
+Unfortunately, that is not the case of external etcds, when the etcd hosts have to be separately replicated for HA mode configuration.
+
 ### Master Node Components
 
 A master node has the following components:
@@ -324,6 +350,11 @@ Container runtimes used to be hard-coded in Kubernetes, but with the development
 Any container runtime that implements CRI can be used by Kubernetes to manage Pods, containers, and container images.
 
 #### kubelet - CRI shims
+
+Below you will find some examples of CRI shims:
+* dockershim
+With dockershim, containers are created using Docker installed on the worker nodes.
+Internally, Docker uses containerd to create and manage containers.
 
 #### kube-proxy
 
