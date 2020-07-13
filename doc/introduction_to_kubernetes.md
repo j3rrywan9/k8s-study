@@ -90,9 +90,50 @@ However, when migrating to Quality Assurance (QA) and Production (Prod) environm
 
 ### Container Orchestrators
 
+With enterprises containerizing their applications and moving them to the cloud, there is a growing demand for container orchestration solutions.
+While there are many solutions available, some are mere re-distributions of well-established container orchestration tools, enriched with features and, sometimes, with certain limitations in flexibility.
+
+Although not exhaustive, the list below provides a few different container orchestration tools and services available today:
+* Amazon Elastic Container Service
+Amazon Elastic Container Service (ECS) is a hosted service provided by Amazon Web Services (AWS) to run Docker containers at scale on its infrastructure.
+* Azure Container Instances
+Azure Container Instance (ACI) is a basic container orchestration service provided by Microsoft Azure.
+* Azure Service Fabric
+Azure Service Fabric is an open source container orchestrator provided by Microsoft Azure.
+* Kubernetes
+Kubernetes is an open source orchestration tool, started by Google, part of the Cloud Native Computing Foundation (CNCF) project.
+* Marathon
+Marathon is a framework to run containers at scale on Apache Mesos.
+* Nomad
+Nomad is the container orchestrator provided by HashiCorp.
+* Docker Swarm
+Docker Swarm is a container orchestrator provided by Docker, Inc.
+It is part of Docker Engine.
+
 ### Why Use Container Orchestrators?
 
+Although we can manually maintain a couple of containers or write scripts for dozens of containers, orchestrators make things much easier for operators especially when it comes to managing hundreds and thousands of containers running on a global infrastructure.
+
+Most container orchestrators can:
+* Group hosts together while creating a cluster
+* Schedule containers to run on hosts in the cluster based on resources availability
+* Enable containers in a cluster to communicate with each other regardless of the host they are deployed to in the cluster
+* Bind containers and storage resources
+* Group sets of similar containers and bind them to load-balancing constructs to simplify access to containerized applications by creating a level of abstraction between the containers and the user
+* Manage and optimize resource usage
+* Allow for implementation of policies to secure access to applications running inside containers.
+
+With all these configurable yet flexible features, container orchestrators are an obvious choice when it comes to managing containerized applications at scale.
+In this course, we will explore **Kubernetes**, one of the most in-demand container orchestration tools available today.
+
 ### Where to Deploy Container Orchestrators?
+
+Most container orchestrators can be deployed on the infrastructure of our choice - on bare metal, Virtual Machines, on-premise, or the public cloud. Kubernetes, for example, can be deployed on a workstation, with or without a local hypervisor such as Oracle VirtualBox, inside a company's data center, in the cloud on AWS Elastic Compute Cloud (EC2) instances, Google Compute Engine (GCE) VMs, DigitalOcean Droplets, OpenStack, etc.
+
+There are turnkey solutions which allow Kubernetes clusters to be installed, with only a few commands, on top of cloud Infrastructures-as-a-Service, such as GCE, AWS EC2, Docker Enterprise, IBM Cloud, Rancher, VMware, Pivotal, and multi-cloud solutions through IBM Cloud Private and StackPointCloud.
+
+Last but not least, there is the managed container orchestration as-a-Service, more specifically the managed Kubernetes as-a-Service solution, offered and hosted by the major cloud providers, such as Google Kubernetes Engine (GKE), Amazon Elastic Container Service for Kubernetes (Amazon EKS), Azure Kubernetes Service (AKS), IBM Cloud Kubernetes Service, DigitalOcean Kubernetes, Oracle Container Engine for Kubernetes, etc.
+These shall be explored in one of the later chapters.
 
 ## Chapter 3 Kubernetes
 
