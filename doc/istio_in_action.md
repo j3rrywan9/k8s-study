@@ -276,7 +276,7 @@ kubectl apply -f catalog-service.yaml
 We'll dig deeper into what this configuration does later in the chapter.
 For now, just know that configuring Istio traffic routing rules will use a similar pattern: describe intent in Istio resource files (YAML) and pass it to the Kubernetes API.
 
-Istio’s configuration resources are implemented as Kubernetes custom resource definitions (CRDs).
+Istio's configuration resources are implemented as Kubernetes custom resource definitions (CRDs).
 CRDs are used to extend the native Kubernetes API to add new functionality to a Kubernetes cluster without having to modify any Kubernetes code.
 In the case of Istio, we can use Istio's custom resources (CRs) to add Istio functionality to a Kubernetes cluster and use native Kubernetes tools to apply, create, and delete the resources.
 Istio implements a controller that watches for these new CRs to be added and reacts to them accordingly.
@@ -346,4 +346,367 @@ The first thing to do is create a namespace in Kubernetes in which we'll deploy 
 ```sh
 kubectl create namespace istioinaction
 kubectl config set-context $(kubectl config current-context) --namespace=istioinaction
+```
+Now that we're in the istioinaction namespace, let's take a look at what we're going to deploy.
+The Kubernetes resource files for `catalog-service` can be found in the $SRC_BASE/services/catalog/kubernetes/catalog.yaml file and looks similar to this:
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: catalog
+  name: catalog
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app: catalog
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: catalog
+    version: v1
+  name: catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: catalog
+        version: v1
+    spec:
+      containers:
+      - env:
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        image: istioinaction/catalog:latest
+        imagePullPolicy: IfNotPresent
+        name: catalog
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        securityContext:
+          privileged: false
+```
+Before we deploy this, however, we want to inject the Istio service proxy so that this service can participate in the service mesh.
+From the root of the source code, run the `istioctl` command we introduced earlier:
+```sh
+istioctl kube-inject -f services/catalog/kubernetes/catalog.yaml
+```
+The `istioctl kube-inject` command takes a Kubernetes resource file and enriches it with the sidecar deployment of the Istio service proxy and a few additional components (elaborated on in appendix B).
+Recall from chapter 1 that a *sidecar* deployment packages a complementing container alongside the main application container: they work together to deliver some functionality.
+In the case of Istio, the sidecar is the service proxy, and the main application container is your application code.
+If you look through the previous command's output, the YAML now includes a few extra containers as part of the deployment.
+Most notably, you should see the following:
+```yaml
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --serviceCluster
+        - catalog.$(POD_NAMESPACE)
+        - --proxyLogLevel=warning
+        - --proxyComponentLogLevel=misc:error
+        - --trust-domain=cluster.local
+        - --concurrency
+        - "2"
+        env:
+        - name: JWT_POLICY
+          value: first-party-jwt
+        - name: PILOT_CERT_PROVIDER
+          value: istiod
+        - name: CA_ADDR
+          value: istiod.istio-system.svc:15012
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+...
+        image: docker.io/istio/proxyv2:{1.13.0}
+        imagePullPolicy: Always
+        name: istio-proxy
+```
+In Kubernetes, the smallest unit of deployment is called a *Pod*.
+A Pod can be one or more containers deployed atomically together.
+When we run `kube-inject`, we add another container named `istio-proxy` to the Pod template in the `Deployment` object, although we haven't actually deployed anything yet.
+We could deploy the YAML file created by the `kube-inject` command directly;
+however, we are going to take advantage of Istio's ability to automatically inject the sidecar proxy.
+
+### 2.4 Exploring the power of Istio with resilience, observability, and traffic control
+
+In the previous example, we had to port-forward the `webapp` service locally because, so far, we have no way of getting traffic into the cluster.
+With Kubernetes, we typically use an ingress controller like Nginx or a dedicated API gateway like Solo.io's Gloo Edge to do that.
+With Istio, we can use an Istio ingress gateway to get traffic into the cluster, so we can call our web application.
+In chapter 4, we'll look at why the out-of-the-box Kubernetes ingress resource is not sufficient for typical enterprise workloads and how Istio has the concepts of `Gateway` and `VirtualService` resources to solve those challenges.
+For now, we'll use the Istio ingress gateway to expose our webapp service:
+```sh
+kubectl apply -f ch2/ingress-gateway.yaml
+```
+At this point, we've made Istio aware of the webapp service at the edge of the Kubernetes cluster, and we can call into it.
+Let's see whether we can reach our service.
+First we need to get the endpoint on which the Istio gateway is listening.
+On Docker Desktop, it defaults to http://localhost:80:
+```sh
+curl http://localhost:80/api/catalog/items/1
+```
+
+## Chapter 3. Istio's data plane: The Envoy proxy
+
+When we introduced the idea of a service mesh in chapter 1, we established the concept of a service proxy and how this proxy understands application-level constructs (for example, application protocols like HTTP and gRPC) and enhances an application's business logic with non-differentiating application-networking logic.
+A service proxy runs collocated and out of process with the application, and the application talks through the service proxy whenever it wants to communicate with other services.
+
+With Istio, the Envoy proxies are deployed collocated with all application instances participating in the service mesh, thus forming the service-mesh data plane.
+Since Envoy is such a critical component in the data plane and in the overall service-mesh architecture, we spend this chapter getting familiar with it.
+This should give you a better understanding of Istio and how to debug or troubleshoot your deployments.
+
+### 3.1 What is the Envoy proxy?
+
+Envoy was developed at Lyft to solve some of the difficult application networking problems that crop up when building distributed systems.
+It was contributed as an open source project in September 2016, and a year later (September 2017) it joined the Cloud Native Computing Foundation (CNCF).
+Envoy is written in C++ in an effort to increase performance and, more importantly, to make it more stable and deterministic at higher load echelons.
+
+Envoy is a proxy, so before we go any further, we should make very clear what a proxy is.
+We already mentioned that a proxy is an intermediary component in a network architecture that is positioned in the middle of the communication between a client and a server (see figure 3.1).
+Being in the middle enables it to provide additional features like security, privacy, and policy.
+
+Proxies can simplify what a client needs to know when talking to a service.
+For example, a service may be implemented as a set of identical instances (a cluster), each of which can handle a certain amount of load.
+How should the client know which instance or IP address to use when making requests to that service?
+A proxy can stand in the middle with a single identifier or IP address, and clients can use that to talk to the instances of the service.
+Figure 3.2 shows how the proxy handles load balancing across the instances of the service without the client knowing any details of how things are actually deployed.
+Another common function of this type of reverse proxy is checking the health of instances in the cluster and routing traffic around failing or misbehaving backend instances.
+This way, the proxy can protect the client from having to know and understand which backends are overloaded or failing.
+
+The Envoy proxy is specifically an application-level proxy that we can insert into the request path of our applications to provide things like service discovery, load balancing, and health checking, but Envoy can do more than that.
+We've hinted at some of these enhanced capabilities in earlier chapters, and we'll cover them more in this chapter.
+Envoy can understand layer 7 protocols that an application may speak when communicating with other services.
+For example, out of the box, Envoy understands HTTP 1.1, HTTP 2, gRPC, and other protocols and can add behavior like request-level timeouts, retries, per-retry timeouts, circuit breaking, and other resilience features.
+Something like this cannot be accomplished with basic connection-level (L3/L4) proxies that only understand connections.
+
+Envoy can be extended to understand protocols in addition to the out-of-the-box defaults.
+Filters have been written for databases like MongoDB, DynamoDB, and even asynchronous protocols like Advanced Message Queuing Protocol (AMQP).
+Reliability and the goal of network transparency for applications are worthwhile endeavors, but just as important is the ability to quickly understand what's happening in a distributed architecture, especially when things are not working as expected.
+Since Envoy understands application-level protocols and application traffic flows through Envoy, the proxy can collect lots of telemetry about the requests flowing through the system, such as how long they're taking, how many requests certain services are seeing (throughput), and what error rates the services are experiencing.
+We will cover Envoy's telemetry-collection capabilities in chapter 7 and its extensibility in chapter 14.
+
+As a proxy, Envoy is designed to shield developers from networking concerns by running out-of-process from applications.
+This means any application written in any programming language or with any framework can take advantage of these features.
+Moreover, although services architectures (SOA, microservices, and so on) are the architecture de jour, Envoy doesn't care if you're doing microservices or if you have monoliths and legacy applications written in any language.
+As long as they speak protocols that Envoy can understand (like HTTP), Envoy can provide benefits.
+
+Envoy is a very versatile proxy and can be used in different roles: as a proxy at the edge of your cluster (as an ingress point), as a shared proxy for a single host or group of services, and even as a per-service proxy as we see with Istio.
+With Istio, a single Envoy proxy is deployed per service instance to achieve the most flexibility, performance, and control.
+Just because you use one type of deployment pattern (a sidecar service proxy) doesn't mean you cannot also have the edge served with Envoy.
+In fact, having the proxy be the same implementation at the edge as well as located within the application traffic can make your infrastructure easier to operate and reason about.
+As we'll see in chapter 4, Envoy can be used at the edge for ingress and to tie into the service mesh to give full control and observe traffic from the point it enters the cluster all the way to the individual services in a call graph for a particular request.
+
+#### 3.1.1 Envoy's core features
+
+#### 3.1.2 Comparing Envoy to other proxies
+
+### 3.2 Configuring Envoy
+
+Envoy is driven by a configuration file in either JSON or YAML format.
+The configuration file specifies listeners, routes, and clusters as well as server-specific settings like whether to enable the Admin API, where access logs should go, tracing engine configuration, and so on.
+If you are already familiar with Envoy or Envoy configuration, you may know that there are different versions of the Envoy config.
+The initial versions, v1 and v2, have been deprecated in favor of v3.
+We look only at v3 configuration in this book, as that's the go-forward version and is what Istio uses.
+
+### 3.3 Envoy in action
+
+Envoy is written in C++ and compiled to a native/specific platform.
+The best way to get started with Envoy is to use Docker and run a Docker container with it.
+We've been using Docker Desktop for this book, but access to any Docker daemon can be used for this section.
+For example, on a Linux machine, you can directly install Docker.
+
+### 3.4 How Envoy fits with Istio
+
+Envoy provides the bulk of the heavy lifting for most of the Istio features we covered in chapter 2 and throughout this book.
+As a proxy, Envoy is a great fit for the service-mesh use case;
+however, to get the most value out of Envoy, it needs supporting infrastructure or components.
+The supporting components that allow for user configuration, security policies, and runtime settings, which Istio provides, create the control plane.
+Envoy also does not do all the work in the data plane and needs support.
+To learn more about that, see appendix B.
+
+Let's illustrate the need for supporting components with a few examples.
+We saw that due to Envoy's capabilities, we can configure a fleet of service proxies using static configuration files or a set of *xDS discovery services* for discovering listeners, endpoints, and clusters at run time. Istio implements these xDS APIs in the `istiod` control-plane component.
+
+## Chapter 4. Istio gateways: Getting traffic into a cluster
+
+We usually run interesting services and applications inside our cluster.
+And as we'll see throughout the book, Istio allows us to solve some difficult challenges in service-to-service communication.
+It is this intra-service communication where Istio shines (within a cluster or across clusters).
+
+Before services communicate with each other, something must trigger the interactions.
+For example, an end user purchasing an item, a client querying our API, and so on.
+What each of these triggers have in common is that they originate outside of the cluster.
+This raises the question: how do we get traffic from the outside of the cluster and into it (see figure 4.1)?
+In this chapter, we will answer the question by opening an entry point for clients that live outside the cluster to connect securely to services running inside the cluster.
+
+### 4.1 Traffic ingress concepts
+
+The networking community has a term for connecting networks via well-established entry points: *ingress points*.
+*Ingress* refers to traffic that originates outside the network and is intended for an endpoint within the network.
+The traffic is first routed to an ingress point that acts as a gatekeeper for traffic coming into the network.
+The ingress point enforces rules and policies about what traffic is allowed into the local network.
+If the ingress point allows the traffic, it proxies the traffic to the correct endpoint in the local network.
+If the traffic is not allowed, the ingress point rejects the traffic.
+
+#### 4.1.1 Virtual IPs: Simplifying service access
+
+At this point, it's useful to dig a little further into how traffic is routed to a network's ingress points - at least, how it relates to the type of clusters we look at in this book.
+Let's say we have a service that we wish to expose at api.istioinaction.io/v1/products for external systems to get a list of products in our catalog.
+When our client tries to query that endpoint, the client's networking stack first tries to resolve the api.istioinaction.io domain name to an IP address.
+This is done with DNS servers.
+The networking stack queries the DNS servers for the IP addresses for a particular hostname.
+So the first step in getting traffic into our network is to map our service's IP to a hostname in DNS.
+For a public address, we could use a service like Amazon Route 53 or Google Cloud DNS and map a domain name to an IP address.
+In our own datacenters, we'd use internal DNS servers to do the same thing.
+But to what IP address should we map the name?
+
+Figure 4.2 visualizes why we should not map the name directly to a single instance or endpoint of our service (single IP), as that approach can be very fragile.
+What would happen if that one specific service instance went down?
+Clients would see many errors until we changed the DNS mapping to a new IP address with a working endpoint.
+But doing this any time a service goes down is slow, error-prone, and low availability.
+
+Figure 4.3 shows how mapping the domain name to a virtual IP address that represents our service and forwards traffic to our actual service instances, provides us with higher-availability and flexibility.
+The virtual IP is bound to a type of ingress point known as a *reverse proxy*.
+The reverse proxy is an intermediary component that's responsible for distributing requests to backend services and does not correspond to any specific service.
+The reverse proxy can also provide capabilities like load balancing so requests don't overwhelm any one backend.
+
+#### 4.1.2 Virtual hosting: Multiple services from single access point
+
+In the previous section, we saw how a single virtual IP can be used to address a service that may consist of many service instances with their own IPs;
+however, the client only uses the virtual IP.
+We can also represent multiple different hostnames using a single virtual IP.
+For example, we could have both prod.istioinaction.io and api.istioinaction.io resolve to the same virtual IP address.
+This would mean requests for both hostnames would end up going to the same virtual IP, and thus the same ingress reverse proxy would route the request.
+If the reverse proxy was smart enough, it could use the `Host` HTTP header to further delineate which requests should go to which group of services (see figure 4.4).
+
+Hosting multiple different services at a single entry point is known as virtual hosting.
+We need a way to decide which virtual host group a particular request should be routed to.
+With HTTP/1.1, we can use the `Host` header;
+with HTTP/2, we can use the `:authority` header;
+and with TCP connections, we can rely on Server Name Indication (SNI) with TLS.
+We'll take a closer look at SNI later in this chapter.
+The important thing to note is that the edge ingress functionality we see in Istio uses virtual IP routing and virtual hosting to route service traffic into the cluster.
+
+### 4.2 Istio ingress gateways
+
+Istio has the concept of an *ingress gateway* that plays the role of the network ingress point and is responsible for guarding and controlling access to the cluster from traffic that originates outside of the cluster.
+Additionally, Istio's ingress gateway handles load balancing and virtual-host routing.
+
+If you'd like to verify that the Istio service proxy (Envoy proxy) is indeed running in the Istio ingress gateway, you can run something like this from the root directory of the book's source code:
+```sh
+kubectl -n istio-system exec deploy/istio-ingressgateway -- ps
+```
+You should see a process listing as the output, showing the Istio service proxy command line with both `pilot-agent` and `envoy` as the running processes.
+The `pilot-agent` process initially configures and bootstraps the Envoy proxy;
+and as we'll see in chapter 13, it implements a DNS proxy as well.
+
+To configure Istio's ingress gateway to allow traffic into the cluster and through the service mesh, we'll start by exploring two Istio resources: `Gateway` and `VirtualService`.
+Both are fundamental for getting traffic to flow in Istio, but we'll look at them only within the context of allowing traffic into the cluster.
+We will cover VirtualService more fully in chapter 5.
+
+#### 4.2.1 Specifying Gateway resources
+
+To configure an ingress gateway in Istio, we use the `Gateway` resource and specify which ports we wish to open and what virtual hosts to allow for those ports.
+The example `Gateway` resource we'll explore is quite simple and exposes an HTTP port on port 80 that accepts traffic destined for virtual host `webapp.istioinaction.io`:
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: coolstore-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "webapp.istioinaction.io"
+```
+Our `Gateway` resource configures Envoy to listen on port 80 and expect HTTP traffic.
+Let's create that resource and see what it does.
+In the root of the book's source code is a ch4/coolstore-gw.yaml file.
+To create the configuration, run the following:
+```sh
+kubectl -n istioinaction apply -f ch4/coolstore-gw.yaml
+```
+Let's see whether our settings took effect:
+```sh
+istioctl -n istio-system proxy-config listener deploy/istio-ingressgateway
+```
+If you see this output, you've exposed the HTTP port (port 80) correctly!
+Looking at the routes for virtual services, we see that the gateway doesn't have any at the moment (you may see another route for Prometheus, but you can ignore it for now):
+```sh
+istioctl proxy-config route deploy/istio-ingressgateway -o json --name http.8080  -n istio-system
+```
+Our listener is bound to a `blackhole` default route that routes everything to HTTP 404.
+In the next section, we set up a virtual host to route traffic from port 80 to a service within the service mesh.
+
+Before we go on, there's an important last point to be made.
+The Pod running the gateway, whether that's the default `istio-ingressgateway` or your own custom gateway, must be able to listen on a port or IP that is exposed outside the cluster.
+For example, on the local Docker Desktop that we're using for these examples, the ingress gateway is listening on port 80.
+If you're deploying on a cloud service like Google Container Engine (GKE), make sure you use a service of type `LoadBalancer`, which gets an externally routable IP address. You can find more information at https://istio.io/v1.13/docs/tasks/traffic-management/ingress/.
+
+Additionally, the default `istio-ingressgateway` does not need privileged access to open any ports, as it does not listen on any system ports (80 for HTTP).
+`istio-ingressgateway` by default listens on port 8080;
+however, whatever service or load balancer you use to expose the gateway is the actual port.
+In our examples with Docker Desktop, we expose the service on port 80.
+
+#### 4.2.2 Gateway routing with virtual services
+
+So far, all we've done is configure an Istio gateway to expose a specific port, expect a specific protocol on that port, and define specific hosts to serve from the port/protocol pair.
+When traffic comes into the gateway, we need a way to get it to a specific service within the service mesh; and to do that, we'll use the `VirtualService` resource.
+In Istio, a `VirtualService` resource defines how a client talks to a specific service through its fully qualified domain name, which versions of a service are available, and other routing properties (like retries and request timeouts).
+We'll cover `VirtualService` in more depth in the next chapter when we explore traffic routing;
+in this chapter, it's sufficient to know that `VirtualService` allows us to route traffic from the ingress gateway to a specific service.
+
+An example of a `VirtualService` that routes traffic for the virtual host `webapp.istioinaction.io` to services deployed in our service mesh looks like this:
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: webapp-vs-from-gw
+spec:
+  hosts:
+  - "webapp.istioinaction.io"
+  gateways:
+  - coolstore-gateway
+  http:
+  - route:
+    - destination:
+        host: webapp
+        port:
+          number: 8080
+```
+With this `VirtualService` resource, we define what to do with traffic when it comes into the gateway.
+In this case, as you can see from the `spec.gateways` field, these traffic rules apply only to traffic coming from the `coolstore-gateway` gateway definition, which we created in the previous section.
+Additionally, we specify the virtual host `webapp.istioinaction.io` for which traffic must be destined for these rules to match.
+An example of matching this rule is a client querying `http://webapp.istioinaction.io`, which resolves to an IP that the Istio gateway is listening on.
+Additionally, a client can explicitly set the `Host` header in the HTTP request to be `webapp.istioinaction.io`, as we'll show through an example.
+
+Again, verify that you're in the root directory of the source code:
+```sh
+kubectl apply -n istioinaction -f ch4/coolstore-vs.yaml
+```
+After a few moments (the configuration needs to sync; recall that configuration in the Istio service mesh is eventually consistent), we can re-run our commands to list the listeners and routes:
+```sh
+istioctl proxy-config route deploy/istio-ingressgateway -o json --name http.8080 -n istio-system
 ```
