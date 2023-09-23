@@ -182,7 +182,9 @@ Once things have settled in, you can run the `kubectl` command to list all of th
 
 The `istio-system` namespace is special in that the control plane is deployed into it and can act as a cluster-wide control plane for Istio.
 Let's see what components are installed into the `istio-system` namespace:
-
+```sh
+kubectl get pod -n istio-system
+```
 What exactly did we install?
 In chapter 1, we introduced the concept of a service mesh and said that Istio is an open source implementation of a service mesh.
 We also said that a service mesh comprises data-plane (that is, service proxies) and control-plane components.
@@ -200,6 +202,7 @@ We can run the `verify-install` command post-install to verify that it has compl
 ```sh
 istioctl verify-install
 ```
+
 Finally, we need to install the control-plane supporting components.
 These components are not strictly required but should be installed for any real deployment of Istio.
 The versions of the supporting components we install here are recommended for demo purposes only, not production usage.
@@ -347,7 +350,7 @@ The first thing to do is create a namespace in Kubernetes in which we'll deploy 
 kubectl create namespace istioinaction
 kubectl config set-context $(kubectl config current-context) --namespace=istioinaction
 ```
-Now that we're in the istioinaction namespace, let's take a look at what we're going to deploy.
+Now that we're in the `istioinaction` namespace, let's take a look at what we're going to deploy.
 The Kubernetes resource files for `catalog-service` can be found in the $SRC_BASE/services/catalog/kubernetes/catalog.yaml file and looks similar to this:
 ```yaml
 apiVersion: v1
@@ -445,6 +448,30 @@ When we run `kube-inject`, we add another container named `istio-proxy` to the P
 We could deploy the YAML file created by the `kube-inject` command directly;
 however, we are going to take advantage of Istio's ability to automatically inject the sidecar proxy.
 
+To enable automatic injection, we label the `istioinaction` namespace with `istio-injection=enabled`:
+```sh
+kubectl label namespace istioinaction istio-injection=enabled
+```
+Now let's create the `catalog` deployment:
+```sh
+kubectl apply -f services/catalog/kubernetes/catalog.yaml
+```
+
+After things come to a steady state, you should see the Pod with `Running` in the `Status` column, as in the previous snippet.
+Also note the `2/2` in the `Ready` column: this means there are two containers in the Pod, and two of them are in the `Ready` state.
+One of those containers is the application container, `catalog` in this case.
+The other container is the `istio-proxy` sidecar.
+
+At this point, we can query the `catalog` service *from within* the Kubernetes cluster with the hostname `catalog.istioinaction`.
+Run the following command to verify everything is up and running properly.
+If you see the following JSON output, the service is up and running correctly:
+```sh
+kubectl run -i -n default --rm --restart=Never dummy --image=curlimages/curl --command -- sh -c 'curl -s http://catalog.istioinaction/items/1'
+```
+
+So far, all we've done is deploy the `catalog` and `webapp` services with the Istio service proxies.
+Each service has its own sidecar proxy, and all traffic to or from the individual services goes through the respective sidecar proxy (see figure 2.7).
+
 ### 2.4 Exploring the power of Istio with resilience, observability, and traffic control
 
 In the previous example, we had to port-forward the `webapp` service locally because, so far, we have no way of getting traffic into the cluster.
@@ -455,13 +482,80 @@ For now, we'll use the Istio ingress gateway to expose our webapp service:
 ```sh
 kubectl apply -f ch2/ingress-gateway.yaml
 ```
-At this point, we've made Istio aware of the webapp service at the edge of the Kubernetes cluster, and we can call into it.
+At this point, we've made Istio aware of the `webapp` service at the edge of the Kubernetes cluster, and we can call into it.
 Let's see whether we can reach our service.
 First we need to get the endpoint on which the Istio gateway is listening.
 On Docker Desktop, it defaults to http://localhost:80:
 ```sh
 curl http://localhost:80/api/catalog/items/1
 ```
+
+If you have encountered any errors up to this point, go back and make sure you successfully complete all of the steps.
+If you still encounter errors, ensure that the Istio ingress gateway has a route to our `webapp` service set up properly.
+To do that, you can use Istio's debugging tools to check the configuration of the ingress gateway proxy.
+You can use the same technique to check any Istio proxy deployed with any application, but we'll come back to that.
+For now, check whether your gateway has a route:
+```sh
+istioctl proxy-config routes deploy/istio-ingressgateway.istio-system
+```
+You should see something similar to this:
+```
+NAME          VHOST NAME     DOMAINS     MATCH                  VIRTUAL SERVICE
+http.8080     *:80           *           /*                     webapp-virtualservice.istioinaction
+              backend        *           /stats/prometheus*
+              backend        *           /healthz/ready*
+```
+If you don't, your best bet is to double-check that the gateway and virtual service resources were installed:
+```sh
+kubectl get gateway
+kubectl get virtualservice
+```
+Additionally, make sure they are applied in the `istioinaction` namespace: in the virtual service definition, we use the abbreviated hostname (`webapp`), which lacks the namespace and defaults to the namespace the virtual service is applied to.
+You can also add the namespace by updating the virtual service to route traffic to the host
+`webapp.istioinaction`.
+
+#### 2.4.1 Istio observability
+
+Since the Istio service proxy sits in the call path on both sides of the connection (each service has its own service proxy), Istio can collect a lot of telemetry and insight into what's happening between applications.
+Istio's service proxy is deployed as a sidecar alongside each application, so the insight it collects is from "out of process" of the application.
+For the most part, this means applications do not need library- or framework-specific implementations to accomplish this level of observability.
+The application is a black box to the proxy, and telemetry is focused on the application's behavior as observed through the network.
+
+Istio creates telemetry for two major categories of observability.
+The first is top-line metrics or things like requests per second, number of failures, and tail-latency percentiles.
+Knowing these values can provide great insight into where problems are starting to arise in a system.
+Second, Istio can facilitate distributed tracing like OpenTracing.io.
+Istio can send spans to distributed-tracing backends without applications having to worry about it.
+This way, we can dig into what happened during a particular service interaction, see where latency occurred, and get information about overall call latency.
+Let's explore these capabilities hands-on with our example application.
+
+We'll first look at some Istio observability features we can get out of the box.
+In the previous section, we added two Kubernetes deployments and injected them with the Istio sidecar proxies.
+Then we added an Istio ingress gateway, so we could reach our service from outside the cluster.
+To get metrics, we will use Prometheus and Grafana.
+
+Istio by default comes with some sample add-ons or supporting components that we installed earlier.
+As noted in the previous sections, these components from the Istio installation are intended for demo purposes only.
+For a production setup, you should install each supporting component following its respective documentation.
+Referring again to the diagram of the control plane (figure 2.8), we can see how these components fit in.
+
+Let's use `istioctl` to port-forward Grafana to our local machine, so we can see the dashboards:
+```sh
+istioctl dashboard grafana
+```
+This should automatically open your default browser; if it doesn't, open a browser and go to http://localhost:3000.
+You should arrive at the Grafana home screen, as shown in figure 2.9.
+In the upper-left corner, select the Home dashboard to expose a drop-down list of other dashboards we can switch to.
+
+#### 2.4.2 Istio for resiliency
+
+As we've discussed, applications that communicate over the network to help complete their business logic must be aware of and account for the fallacies of distributed computing: they need to deal with network unpredictability.
+In the past, we tried to include a lot of this networking workaround code in our applications by doing things like retries, timeouts, circuit-breaking, and so on.
+Istio can save us from having to write this networking code directly into our applications and provide a consistent, default expectation of resilience for all the applications in the service mesh.
+
+#### 2.4.3 Istio for traffic routing
+
+The last Istio capability we'll look at in this chapter is the ability to have very fine-grained control over requests in the service mesh no matter how deep they are in a call graph.
 
 ## Chapter 3. Istio's data plane: The Envoy proxy
 
@@ -479,7 +573,7 @@ It was contributed as an open source project in September 2016, and a year later
 Envoy is written in C++ in an effort to increase performance and, more importantly, to make it more stable and deterministic at higher load echelons.
 
 Envoy is a proxy, so before we go any further, we should make very clear what a proxy is.
-We already mentioned that a proxy is an intermediary component in a network architecture that is positioned in the middle of the communication between a client and a server (see figure 3.1).
+We already mentioned that a *proxy* is an intermediary component in a network architecture that is positioned in the middle of the communication between a client and a server (see figure 3.1).
 Being in the middle enables it to provide additional features like security, privacy, and policy.
 
 Proxies can simplify what a client needs to know when talking to a service.
