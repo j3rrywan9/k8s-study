@@ -690,7 +690,7 @@ For example, we could have both prod.istioinaction.io and api.istioinaction.io r
 This would mean requests for both hostnames would end up going to the same virtual IP, and thus the same ingress reverse proxy would route the request.
 If the reverse proxy was smart enough, it could use the `Host` HTTP header to further delineate which requests should go to which group of services (see figure 4.4).
 
-Hosting multiple different services at a single entry point is known as virtual hosting.
+Hosting multiple different services at a single entry point is known as *virtual hosting*.
 We need a way to decide which virtual host group a particular request should be routed to.
 With HTTP/1.1, we can use the `Host` header;
 with HTTP/2, we can use the `:authority` header;
@@ -702,6 +702,14 @@ The important thing to note is that the edge ingress functionality we see in Ist
 
 Istio has the concept of an *ingress gateway* that plays the role of the network ingress point and is responsible for guarding and controlling access to the cluster from traffic that originates outside of the cluster.
 Additionally, Istio's ingress gateway handles load balancing and virtual-host routing.
+
+Figure 4.5 shows Istio's ingress gateway component allowing traffic into the cluster and performing reverse proxy functionality.
+Istio uses a single Envoy proxy as the ingress gateway.
+We saw in chapter 3 that Envoy is a capable service-to-service proxy, but it can also be used to load balance and route traffic from outside the service mesh to services running inside it.
+All the features of Envoy that we discussed in the previous chapter are also available in an ingress gateway.
+
+Let’s take a closer look at how Istio uses Envoy to implement its ingress gateway component.
+As we saw when we installed Istio in chapter 2, figure 4.6 shows the list of components that make up the control plane and additional components that support the control plane.
 
 If you'd like to verify that the Istio service proxy (Envoy proxy) is indeed running in the Istio ingress gateway, you can run something like this from the root directory of the book's source code:
 ```sh
@@ -745,11 +753,18 @@ kubectl -n istioinaction apply -f ch4/coolstore-gw.yaml
 Let's see whether our settings took effect:
 ```sh
 istioctl -n istio-system proxy-config listener deploy/istio-ingressgateway
+
+ADDRESSES PORT  MATCH DESTINATION
+0.0.0.0   8080  ALL   Route: http.8080
+0.0.0.0   15021 ALL   Inline Route: /healthz/ready*
+0.0.0.0   15090 ALL   Inline Route: /stats/prometheus*
 ```
 If you see this output, you've exposed the HTTP port (port 80) correctly!
 Looking at the routes for virtual services, we see that the gateway doesn't have any at the moment (you may see another route for Prometheus, but you can ignore it for now):
+**NOTE** If you are not using Docker Desktop, the name of the listener (in this instance "http.8080") may be different.
+Update the command below accordingly.
 ```sh
-istioctl proxy-config route deploy/istio-ingressgateway -o json --name http.8080  -n istio-system
+istioctl -n istio-system proxy-config route deploy/istio-ingressgateway -o json --name http.8080
 ```
 Our listener is bound to a `blackhole` default route that routes everything to HTTP 404.
 In the next section, we set up a virtual host to route traffic from port 80 to a service within the service mesh.
@@ -767,7 +782,8 @@ In our examples with Docker Desktop, we expose the service on port 80.
 #### 4.2.2 Gateway routing with virtual services
 
 So far, all we've done is configure an Istio gateway to expose a specific port, expect a specific protocol on that port, and define specific hosts to serve from the port/protocol pair.
-When traffic comes into the gateway, we need a way to get it to a specific service within the service mesh; and to do that, we'll use the `VirtualService` resource.
+When traffic comes into the gateway, we need a way to get it to a specific service within the service mesh;
+and to do that, we'll use the `VirtualService` resource.
 In Istio, a `VirtualService` resource defines how a client talks to a specific service through its fully qualified domain name, which versions of a service are available, and other routing properties (like retries and request timeouts).
 We'll cover `VirtualService` in more depth in the next chapter when we explore traffic routing;
 in this chapter, it's sufficient to know that `VirtualService` allows us to route traffic from the ingress gateway to a specific service.
@@ -802,5 +818,74 @@ kubectl apply -n istioinaction -f ch4/coolstore-vs.yaml
 ```
 After a few moments (the configuration needs to sync; recall that configuration in the Istio service mesh is eventually consistent), we can re-run our commands to list the listeners and routes:
 ```sh
-istioctl proxy-config route deploy/istio-ingressgateway -o json --name http.8080 -n istio-system
+istioctl -n istio-system proxy-config route deploy/istio-ingressgateway -o json --name http.8080
+
+[
+  {
+    "name": "http.8080",
+    "virtualHosts": [
+      {
+      "name": "webapp-vs-from-gw:80",
+      "domains": [
+          "webapp.istioinaction.io"
+      ],
+      "routes": [
+        {
+          "match": {
+            "prefix": "/"
+          },
+          "route": {
+            "cluster": "outbound|8080||webapp.istioinaction.svc.cluster.local",
+            "timeout": "0.000s"
+          }
+        }
+      ]
+      }
+    ]
+  }
+]
 ```
+The output for route should look similar to the previous listing, although it may contain other attributes and information.
+The critical part is that we can see how defining a `VirtualService` created an Envoy route in our Istio gateway that routes traffic matching domain `webapp.istioinaction.io` to `webapp` in our service mesh.
+
+We have the routing set up for our services, but we should deploy the services for them to work.
+The following commands are meant to be run from the root of the book's source code:
+```sh
+kubectl config set-context $(kubectl config current-context) --namespace=istioinaction
+kubectl apply -f services/catalog/kubernetes/catalog.yaml
+kubectl apply -f services/webapp/kubernetes/webapp.yaml
+```
+
+Verify that your `Gateway` and `VirtualService` resources are installed correctly:
+```sh
+kubectl get gateway
+
+kubectl get virtualservice
+```
+
+#### 4.2.3 Overall view of traffic flow
+
+In the previous sections, we got hands-on with the `Gateway` and `VirtualService` resources from Istio.
+The `Gateway` resource defines ports, protocols, and virtual hosts that we wish to listen for at the edge of our service-mesh cluster.
+`VirtualService` resources define where traffic should go once it's allowed in at the edge.
+Figure 4.7 shows the full end-to-end flow.
+
+#### 4.2.4 Istio ingress gateway vs. Kubernetes Ingress
+
+#### 4.2.5 Istio ingress gateway vs. API gateways
+
+An API gateway allows an organization to abstract a client that consumes a set of services in a boundary (either network-wise or architectural) from the details of the implementation of those services.
+For example, clients may call a set of APIs that are expected to be well documented, evolve with backward- and forward-compatible semantics, and offer self-service and other mechanisms for usage.
+To accomplish this, the API gateway needs to be able to identify clients using different security challenges (OpenID Connect [OIDC], OAuth 2.0, Lightweight Directory Access Protocol [LDAP]), transform messages (SOAP to REST, gRPC to Rest, body and header text-based transformations, and so on), provide sophisticated business-level rate limiting, and have a self-signup or developer portal.
+Istio's ingress gateway does not do these things out of the box.
+For a more capable API gateway — even one built on an Envoy proxy — that can play this role inside and outside your mesh, take a look at something like Solo.io Gloo Edge (https://docs.solo.io/gloo-edge/latest).
+
+### 4.3 Securing gateway traffic
+
+So far, we've shown how to expose basic HTTP services with an Istio gateway using the `Gateway` and `VirtualService` resources.
+When connecting services from outside a cluster (let's say, the public internet) to those running inside a cluster, one of the basic capabilities of the ingress gateway in a system is to secure traffic and help establish trust in the system.
+We can begin to secure our traffic by giving clients confidence that the service they're hoping to communicate with is indeed the service it claims to be.
+Additionally, we want to exclude anyone from eavesdropping on our communication, so we should encrypt the traffic.
+
+Istio's gateway implementation allows us to terminate incoming TLS/SSL traffic, pass it through to the backend services, redirect any non-TLS traffic to the proper TLS ports, and implement mutual TLS.
+We'll look at each of these capabilities in this section.
