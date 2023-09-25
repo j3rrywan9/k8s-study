@@ -480,15 +480,40 @@ As in the previous version of the pod, the database files are stored in the `qui
 
 ## Chapter 9. Configuration via ConfigMaps, Secrets, and the Downward API
 
+You've now learned how to use Kubernetes to run an application process and attach file
+volumes to it.
+In this chapter, you'll learn how to configure the application - either in the pod
+manifest itself, or by referencing other API objects within it.
+You'll also learn how to inject information about the pod itself into the application running inside it.
+
 ### 9.1 Setting the command, arguments, and environment variables
 
 Like regular applications, containerized applications can be configured using command-line arguments, environment variables, and files.
+
+You learned that the command that is executed when a container starts is typically
+defined in the container image.
+The command is configured in the container's Dockerfile using the `ENTRYPOINT` directive, while the arguments are typically specified using the `CMD` directive.
+Environment variables can also be specified using the the `ENV` directive in the Dockerfile.
+If the application is configured using configuration files, these can be added to the container image using the `COPY` directive.
+You’ve seen several examples of this in the previous chapters.
 
 Hardcoding the configuration into the container image is the same as hardcoding it into the application source code.
 This is not ideal because you must rebuild the image every time you change the configuration.
 Also, you should never include sensitive configuration data such as security credentials or encryption keys in the container image because anyone who has access to it can easily extract them.
 
+Instead, it's much safer to store these files in a volume that you mount in the container.
+As you learned in the previous chapter, one way to do this is to store the files in a persistent volume.
+Another way is to use an `emptyDir` volume and an init container that fetches the files from secure storage and writes them to the volume.
+You should know how to do this if you've read the previous chapters, but there's a better way.
+In this chapter, you'll learn how to use special volume types to achieve the same result without using init containers.
+But first, let's learn how to change the command, arguments, and environment variables without recreating the container image.
+
+#### 9.1.1 Setting the command and arguments
+
 ### 9.2 Using a config map to decouple configuration from the pod
+
+In the previous section, you learned how to hardcode configuration directly into your pod manifests.
+While this is much better than hard-coding in the container image, it's still not ideal because it means you might need a separate version of the pod manifest for each environment you deploy the pod to, such as your development, staging, or production cluster.
 
 To reuse the same pod definition in multiple environments, it's better to decouple the configuration from the pod manifest.
 One way to do this is to move the configuration into a ConfigMap object, which you then reference in the pod manifest.
@@ -496,10 +521,13 @@ This is what you'll do next.
 
 #### 9.2.1 Introducing ConfigMaps
 
-A ConfigMap is a Kubernetes API object that simply contains a list of key/value pairs.
+A `ConfigMap` is a Kubernetes API object that simply contains a list of key/value pairs.
 The values can range from short strings to large blocks of structured text that you typically find in an application configuration file.
 Pods can reference one or more of these key/value entries in the config map.
 A pod can refer to multiple config maps, and multiple pods can use the same config map.
+
+To keep applications Kubernetes-agnostic, they typically don't read the `ConfigMap` object via the Kubernetes REST API.
+Instead, the key/value pairs in the config map are passed to containers as environment variables or mounted as files in the container's filesystem via a `configMap` volume, as shown in the following figure.
 
 #### 9.2.2 Creating a ConfigMap object
 
