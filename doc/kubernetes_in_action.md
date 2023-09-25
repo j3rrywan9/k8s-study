@@ -184,11 +184,297 @@ You could do this by adding code to the `app.js` file, but an easier option exis
 
 ### 5.5 Running additional containers at pod startup
 
+When a pod contains more than one container, all the containers are started in parallel.
+Kubernetes doesn't yet provide a mechanism to specify whether a container depends on
+another container, which would allow you to ensure that one is started before the other.
+However, Kubernetes allows you to run a sequence of containers to initialize the pod before its main containers start.
+This special type of container is explained in this section.
+
 #### 5.5.1 Introducing init containers
+
+A pod manifest can specify a list of containers to run when the pod starts and before the pod's normal containers are started.
+These containers are intended to initialize the pod and are appropriately called *init containers*.
+As the following figure shows, they run one after the other and must all finish successfully before the main containers of the pod are started.
+
+#### 5.5.2 Adding init containers to a pod
+
+In a pod manifest, init containers are defined in the `initContainers` field in the spec
+section, just as regular containers are defined in its `containers` field.
 
 ## Chapter 6. Managing the Pod lifecycle
 
+### 6.1 Understanding the pod's status
+
+After you create a pod object and it runs, you can see what's going on with the pod by
+reading the pod object back from the API.
+As you've learned in chapter 4, the pod object manifest, as well as the manifests of most other kinds of objects, contain a section, which provides the status of the object.
+A pod's status section contains the following information:
+
+### 6.2 Keeping containers healthy
+
+The pods you created in the previous chapter ran without any problems.
+But what if one of the containers dies?
+What if all the containers in a pod die?
+How do you keep the pods healthy and their containers running?
+That's the focus of this section.
+
+#### 6.2.1 Understanding container auto-restart
+
+When a pod is scheduled to a node, the Kubelet on that node starts its containers and from then on keeps them running for as long as the pod object exists.
+If the main process in the container terminates for any reason, the Kubelet restarts the container.
+If an error in your application causes it to crash, Kubernetes automatically restarts it, so even without doing anything special in the application itself, running it in Kubernetes automatically gives it the ability to heal itself.
+Let's see this in action.
+
+#### 6.2.2 Checking the container's health using liveness probes
+
+In the previous section, you learned that Kubernetes keeps your application healthy by
+restarting it when its process terminates.
+But applications can also become unresponsive without terminating.
+For example, a Java application with a memory leak eventually starts spewing out OutOfMemoryErrors, but its JVM process continues to run.
+Ideally, Kubernetes should detect this kind of error and restart the container.
+
+#### 6.2.3 Creating an HTTP GET liveness probe
+
+### 6.3 Executing actions at container start-up and shutdown
+
+### 6.4 Understanding the pod lifecycle
+
 ## Chapter 7. Attaching storage volumes to Pods
+
+The previous two chapters focused on the pod's containers, but they are only half of what a pod typically contains.
+They are typically accompanied by storage volumes that allow a pod's containers to store data for the lifetime of the pod or beyond, or to share files with the other
+containers of the pod.
+This is the focus of this chapter.
+
+### 7.1 Introducing volumes
+
+A pod is like a small logical computer that runs a single application.
+This application can consist of one or more containers that run the application processes.
+These processes share computing resources such as CPU, RAM, network interfaces, and others.
+In a typical computer, the processes use the same filesystem, but this isn't the case with containers.
+Instead, each container has its own isolated filesystem provided by the container image.
+
+When a container starts, the files in its filesystem are those that were added to its
+container image during build time.
+The process running in the container can then modify those files or create new ones.
+When the container is terminated and restarted, all changes it made to its files are lost, because the previous container is not really restarted, but completely replaced, as explained in the previous chapter.
+Therefore, when a containerized application is restarted, it can't continue from the point where it was when it stopped.
+Although this may be okay for some types of applications, others may need the entire filesystem or at least part of it to be preserved on restart.
+
+This is achieved by adding a *volume* to the pod and *mounting* it into the container.
+
+#### 7.1.1 Demonstrating the need for volumes
+
+In this chapter, you'll build a new service that requires its data to be persisted.
+To do this,
+the pod that runs the service will need to contain a volume.
+But before we get to that, let me tell you about this service, and allow you to experience first-hand why it can't work without a volume.
+
+##### INTRODUCING THE QUIZ SERVICE
+
+The Quiz service consists of a RESTful API frontend and a MongoDB database as the
+backend.
+Initially, you'll run these two components in separate containers of the same pod, as shown in the following figure.
+
+As I explained in the pod introduction in chapter 5, creating pods like this is not the best
+idea, as it doesn't allow for the containers to be scaled individually.
+The reason we'll use a single pod is because you haven't yet learned the correct way to make pods communicate with each other.
+You'll learn this in chapter 11.
+That's when you'll split the two containers into separate pods.
+
+##### BUILDING THE QUIZ API CONTAINER
+
+#### 7.1.2 Understanding how volumes fit into pods
+
+Like containers, volumes aren't top-level resources like pods or nodes, but are a component
+within the pod and thus share its lifecycle.
+As the following figure shows, a volume is defined at the pod level and then mounted at the desired location in the container.
+
+The lifecycle of a volume is tied to the lifecycle of the entire pod and is independent of the
+lifecycle of the container in which it is mounted.
+Due to this fact, volumes are also used to persist data across container restarts.
+
+##### PERSISTING FILES ACROSS CONTAINER RESTARTS
+
+All volumes in a pod are created when the pod is set up - before any of its containers are
+started.
+They are torn down when the pod is shut down.
+
+Each time a container is (re)started, the volumes that the container is configured to use
+are mounted in the container's filesystem.
+The application running in the container can read from the volume and write to it if the volume and mount are configured to be writable.
+
+A typical reason for adding a volume to a pod is to persist data across container restarts.
+If no volume is mounted in the container, the entire filesystem of the container is ephemeral.
+Since a container restart replaces the entire container, its filesystem is also re-created from
+the container image.
+As a result, all files written by the application are lost.
+
+If, on the other hand, the application writes data to a volume mounted inside the container, as shown in the following figure, the application process in the new container can access the same data after the container is restarted.
+
+It is up to the author of the application to determine which files must be retained on restart.
+Normally you want to preserve data representing the application's state, but you may not
+want to preserve files that contain the application's locally cached data, as this prevents the
+container from starting fresh when it's restarted.
+Starting fresh every time may allow the application to heal itself when corruption of the local cache causes it to crash.
+Just restarting the container and using the same corrupted files could result in an endless crash loop.
+
+##### MOUNTING MULTIPLE VOLUMES IN A CONTAINER
+
+A pod can have multiple volumes and each container can mount zero or more of these volumes in different locations, as shown in the following figure.
+
+The reason why you might want to mount multiple volumes in one container is that these
+volumes may serve different purposes and can be of different types with different performance characteristics.
+
+In pods with more than one container, some volumes can be mounted in some containers but not in others.
+This is especially useful when a volume contains sensitive information that should only be accessible to some containers.
+
+##### SHARING FILES BETWEEN MULTIPLE CONTAINERS
+
+A volume can be mounted in more than one container so that applications running in these
+containers can share files.
+As discussed in chapter 5, a pod can combine a main application container with sidecar containers that extend the behavior of the main application.
+In some cases, the containers must read or write the same files.
+
+For example, you could create a pod that combines a web server running in one container with a content-producing agent running in another container.
+The content agent container generates the static content that the web server then delivers to its clients.
+Each of the two containers performs a single task that has no real value on its own.
+However, as the next figure shows, if you add a volume to the pod and mount it in both containers, you enable these containers to become a complete system that provides a valuable service and is more than the sum of its parts.
+
+In the figure you'll also notice that the volume mount in each container can be configured
+either as read/write or as read-only.
+Because the content agent needs to write to the volume whereas the web server only reads from it, the two mounts are configured differently.
+In the interest of security, it's advisable to prevent the web server from writing to the volume, since this could allow an attacker to compromise the system if the web server software has a
+vulnerability that allows attackers to write arbitrary files to the filesystem and execute them.
+
+Other examples of using a single volume in two containers are cases where a sidecar container runs a tool that processes or rotates the web server logs or when an init container creates configuration files for the main application container.
+
+### 7.2 Using an `emptyDir` volume
+
+The simplest volume type is `emptyDir`.
+As its name suggests, a volume of this type starts as an empty directory.
+When this type of volume is mounted in a container, files written by the application to the path where the volume is mounted are preserved for the duration of the pod's existence.
+
+This volume type is used in single-container pods when data must be preserved even if the container is restarted.
+It's also used when the container's filesystem is marked read-only, and you want part of it to be writable.
+In pods with two or more containers, an `emptyDir` volume is used to share data between them.
+
+#### 7.2.1 Persisting files across container restarts
+
+##### ADDING AN EMPTYDIR VOLUME TO A POD
+
+Two changes to the pod manifest are required to achieve this:
+1. An `emptyDir` volume must be added to the pod.
+1. The volume must be mounted into the container.
+
+The following listing shows the new pod manifest with these two changes highlighted in bold.
+You'll find the manifest in the file `pod.quiz.emptydir.yaml`.
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: quiz
+spec:
+  volumes:
+  - name: quiz-data
+    emptyDir: {}
+containers:
+  - name: quiz-api
+    image: luksa/quiz-api:0.1
+    ports:
+    - name: http
+      containerPort: 8080
+  - name: mongo
+    image: mongo
+    volumeMounts:
+    - name: quiz-data
+      mountPath: /data/db
+```
+The listing shows that an `emptyDir` volume named `quiz-data` is defined in the `spec.volumes` array of the pod manifest and that it is mounted into the mongo container's filesystem at the location `/data/db`.
+The following two sections explain more about the volume and the volume mount definitions.
+
+##### CONFIGURING THE EMPTYDIR VOLUME
+
+In general, each volume definition must include a name and a type, which is indicated by the
+name of the nested field (for example: `emptyDir`, `gcePersistentDisk`, `nfs`, and so on).
+This field typically contains several sub-fields that allow you to configure the volume.
+The set of sub-fields that you set depends on the volume type.
+
+##### MOUNTING THE VOLUME IN A CONTAINER
+
+Defining a volume in the pod is only half of what you need to do to make it available in a
+container.
+The volume must also be mounted in the container.
+This is done by referencing the volume by name in the `volumeMounts` array in the container definition.
+
+In addition to the name, a volume mount definition must also include the `mountPath` - the
+path within the container where the volume should be mounted.
+In listing 7.2, the volume is mounted at `/data/db` because that's where MongoDB stores its files.
+You want these files to be written to the volume instead of the container's filesystem, which is ephemeral.
+
+The full list of supported fields in a volume mount definition is presented in the following
+table.
+
+##### UNDERSTANDING THE LIFESPAN OF AN EMPTYDIR VOLUME
+
+If you replace the quiz pod with the one in listing 7.2 and insert questions into the database,
+you'll notice that the questions you add to the database remain intact, regardless of how
+often the container is restarted.
+This is because the volume's lifecycle is tied to that of the pod.
+
+The directory is typically located at the following location in the node's filesystem:
+```
+/var/lib/kubelet/pods/<pod_UID>/volumes/kubernetes.io~empty-dir/<volume_name>
+```
+The `pod_UID` is the unique ID of the pod, which you'll find the Pod object's `metadata` section.
+If you want to see the directory for yourself, run the following command to get the `pod_UID`:
+```sh
+kubectl get po quiz -o json | jq .metadata.uid
+```
+
+##### UNDERSTANDING WHERE THE FILES IN AN EMPTYDIR VOLUME ARE STORED
+
+As you can see in the following figure, the files in an `emptyDir` volume are stored in a directory in the host node's filesystem.
+It's nothing but a normal file directory.
+This directory is mounted into the container at the desired location.
+
+#### 7.2.2 Populating an `emptyDir` volume with data using an init container
+
+Every time you create the quiz pod from the previous section, the MongoDB database is empty, and you have to insert the questions manually.
+Let's improve the pod by automatically populating the database when the pod starts.
+
+Many ways of doing this exist.
+You could run the MongoDB container locally, insert the data, commit the container state into a new image and use that image in your pod.
+But then you'd have to repeat the process every time a new version of the MongoDB container image
+is released.
+
+Fortunately, the MongoDB container image provides a mechanism to populate the database the first time it's started.
+On start-up, if the database is empty, it invokes any `.js` and `.sh` files that it finds in the `/docker-entrypoint-initdb.d` directory.
+All you need to do is get the file into that location.
+Again, you could build a new MongoDB image with the file in that location, but you'd run into the same problem as described previously.
+An alternative solution is to use a volume to inject the file into that location of the MongoDB container's filesystem.
+But how do you get the file into the volume in the first place?
+
+Kubernetes provides a special type of volume that is initialized by cloning a Git repository - the `gitRepo` volume.
+However, this type of volume is now deprecated.
+The proposed alternative is to use an `emptyDir` volume that you initialize with an init container that executes the `git clone` command.
+You could use this approach, but this would mean that the pod must make a network call to fetch the data.
+
+Another, more generic way of populating an `emptyDir` volume, is to package the data into a container image and copy the data files from the container to the volume when the container starts.
+This removes the dependency on any external systems and allows the pod to run regardless of the network connectivity status.
+
+To help you visualize the pod, look at the following figure.
+
+When the pod starts, first the volumes and then the init container is created.
+The `initdb` volume is mounted into this init container.
+The container image contains the `insert-questions.js` file, which the container copies to the volume when it runs.
+Then the copy operation is complete, the init container finishes and the pod's main containers are started.
+The `initdb` volume is mounted into the `mongo` container at the location where MongoDB looks for database initialization scripts.
+On first start-up, MongoDB executes the `insert-questions.js` script.
+This inserts the questions into the database.
+As in the previous version of the pod, the database files are stored in the `quiz-data` volume to allow the data to survive container restarts.
+
+#### 7.2.3 Sharing files between containers
 
 ## Chapter 8. Persisting data in PersistentVolumes
 
