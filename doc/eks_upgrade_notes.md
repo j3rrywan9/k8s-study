@@ -77,3 +77,12 @@ cluster-autoscaler/cluster-autoscaler      	9.27.0       	1.24.0     	Scales Kub
 ...
 ```
 Based on the comments found in [this GitHub Issue](https://github.com/kubernetes/autoscaler/issues/5761), I ended up using Helm chart version `9.29.5` with customized CA image tag i.e. `v1.25.3` in the `values.yaml` file.
+
+### [NVIDIA device plugin for Kubernetes](https://github.com/NVIDIA/k8s-device-plugin)
+
+#### Device Plugins
+
+Kubernetes provides a device plugin framework that you can use to advertise system hardware resources to the Kubelet.
+
+Instead of customizing the code for Kubernetes itself, vendors can implement a device plugin that you deploy either manually or as a DaemonSet.
+The targeted devices include GPUs, high-performance NICs, FPGAs, InfiniBand adapters, and other similar computing resources that may require vendor specific initialization and setup.
