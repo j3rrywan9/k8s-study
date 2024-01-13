@@ -532,3 +532,77 @@ Instead, the key/value pairs in the config map are passed to containers as envir
 #### 9.2.2 Creating a ConfigMap object
 
 #### 9.2.3 Injecting config map values into environment variables
+
+## Chapter 10. Organizing objects using Namespaces and Labels
+
+A Kubernetes cluster is usually used by many teams.
+How should these teams deploy objects to the same cluster and organize them so that one team doesn't accidentally modify the objects created by other teams?
+
+And how can a large team deploying hundreds of microservices organize them so that each team member, even if new to the team, can quickly see where each object belongs and what its role in the system is?
+For example, to which application does a config map or a secret belong.
+
+These are two different problems.
+Kubernetes solves the first with object namespaces, and the other with object labels.
+In this chapter, you will learn about both.
+
+### 10.1 Organizing objects into Namespaces
+
+#### 10.1.1 Listing namespaces and the objects they contain
+
+#### 10.1.2 Creating namespaces
+
+#### 10.1.3 Managing objects in other namespaces
+
+### 10.2 Organizing pods with labels
+
+#### 10.2.1 Introducing labels
+
+Labels are an incredibly powerful yet simple feature for organizing Kubernetes API objects.
+A label is a key-value pair you attach to an object that allows any user of the cluster to identify
+the object's role in the system.
+Both the key and the value are simple strings that you can specify as you wish.
+An object can have more than one label, but the label keys must be unique within that object.
+You normally add labels to objects when you create them, but you can also change an object's labels later.
+
+### 10.3 Filtering objects with label selectors
+
+### 10.4 Annotating objects
+
+## Chapter 11. Exposing Pods with Services
+
+Instead of running a single pod to provide a particular service, people nowadays typically run
+several replicas of the pod so that the load can be distributed across multiple cluster nodes.
+But that means all pod replicas providing the same service should be reachable at a single
+address so clients can use that single address, rather than having to keep track of and
+connect directly to individual pod instances.
+In Kubernetes, you do that with Service objects.
+
+Each pod has its own network interface with its own IP address.
+
+### 11.1 Exposing pods via services
+
+#### 11.1.1 Introducing services
+
+A Kubernetes Service is an object you create to provide a single, stable access point to a set
+of pods that provide the same service.
+Each service has a stable IP address that doesn't change for as long as the service exists.
+Clients open connections to that IP address on one of the exposed network ports, and those connections are then forwarded to one of the pods that back that service.
+In this way, clients don't need to know the addresses of the individual pods providing the service, so those pods can be scaled out or in and moved from one cluster node to the other at will.
+A service acts as a load balancer in front of those pods.
+
+##### UNDERSTANDING WHY YOU NEED SERVICES
+
+By creating a service for the Kiada pods and configuring it to be reachable from outside the
+cluster, you create a single, constant IP address through which external clients can connect
+to the pods.
+Each connection is forwarded to one of the kiada pods.
+
+By creating a service for the Quote pods, you create a stable IP address through which
+the Kiada pods can reach the Quote pods, regardless of the number of pod instances behind
+the service and their location at any given time.
+
+Although there's only one instance of the Quiz pod, it too must be exposed through a
+service, since the pod's IP address changes every time the pod is deleted and recreated.
+Without a service, you'd have to reconfigure the Kiada pods each time or make the pods get
+the Quiz pod's IP from the Kubernetes API.
+If you use a service, you don't have to do that because its IP address never changes.
