@@ -172,7 +172,7 @@ In the distribution you just downloaded and unpacked, the manifests directory co
 The official method for any real installation of Istio is to use `istioctl`, `istio-operator`, or Helm.
 Appendix A guides you through installing and customizing Istio using `istioctl` and `istio-operator`.
 
-For this book, we use istioctl and various pre-curated profiles to take a step-by-step, incremental approach to adopting Istio.
+For this book, we use `istioctl` and various pre-curated profiles to take a step-by-step, incremental approach to adopting Istio.
 To perform the demo install, use the `istioctl` CLI tool as shown next:
 ```sh
 istioctl install --set profile=demo -y
