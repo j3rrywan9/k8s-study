@@ -525,9 +525,9 @@ To un-anchor the regex, use `.*<regex>.*`.
 * `uppercase`: Maps the concatenated `source_labels` to their upper case.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
-* `keepequal`: Drop targets for which the concatenated source_labels do not match target_label.
-* `dropequal`: Drop targets for which the concatenated source_labels do match target_label.
-* `hashmod`: Set `target_label` to the modulus of a hash of the concatenated source_labels.
+* `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
+* `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
+* `hashmod`: Set `target_label` to the modulus of a hash of the concatenated `source_labels`.
 * `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then copy the values of the matching labels to label names given by `replacement` with match group references (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
 * `labeldrop`: Match `regex` against all label names. Any label that matches will be removed from the set of labels.
 * `labelkeep`: Match `regex` against all label names. Any label that does not match will be removed from the set of labels.
@@ -539,6 +539,144 @@ Care must be taken with `labeldrop` and `labelkeep` to ensure that metrics are s
 `write_relabel_configs` is relabeling applied to samples before sending them to the remote endpoint.
 Write relabeling is applied after external labels.
 This could be used to limit which samples are sent.
+
+### Defining Recording Rules
+
+#### Configuring rules
+
+Prometheus supports two types of rules which may be configured and then evaluated at regular intervals: recording rules and [alerting rules](#alerting-rules).
+To include rules in Prometheus, create a file containing the necessary rule statements and have Prometheus load the file via the `rule_files` field in the Prometheus configuration.
+Rule files use YAML.
+
+#### Syntax-checking rules
+
+To quickly check whether a rule file is syntactically correct without starting a Prometheus server, you can use Prometheus's `promtool` command-line utility tool:
+
+#### Recording rules
+
+Recording rules allow you to precompute frequently needed or computationally expensive expressions and save their result as a new set of time series.
+Querying the precomputed result will then often be much faster than executing the original expression every time it is needed.
+This is especially useful for dashboards, which need to query the same expression repeatedly every time they refresh.
+
+Recording and alerting rules exist in a rule group.
+Rules within a group are run sequentially at a regular interval, with the same evaluation time.
+The names of recording rules must be valid metric names.
+The names of alerting rules must be valid label values.
+
+The syntax of a rule file is:
+```
+groups:
+  [ - <rule_group> ]
+```
+
+##### `<rule_group>`
+
+```
+# The name of the group. Must be unique within a file.
+name: <string>
+
+# How often rules in the group are evaluated.
+[ interval: <duration> | default = global.evaluation_interval ]
+
+# Limit the number of alerts an alerting rule and series a recording
+# rule can produce. 0 is no limit.
+[ limit: <int> | default = 0 ]
+
+rules:
+  [ - <rule> ... ]
+```
+
+##### `<rule>`
+
+The syntax for recording rules is:
+```
+# The name of the time series to output to. Must be a valid metric name.
+record: <string>
+
+# The PromQL expression to evaluate. Every evaluation cycle this is
+# evaluated at the current time, and the result recorded as a new set of
+# time series with the metric name as given by 'record'.
+expr: <string>
+
+# Labels to add or overwrite before storing the result.
+labels:
+  [ <labelname>: <labelvalue> ]
+```
+
+The syntax for alerting rules is:
+```
+# The name of the alert. Must be a valid label value.
+alert: <string>
+
+# The PromQL expression to evaluate. Every evaluation cycle this is
+# evaluated at the current time, and all resultant time series become
+# pending/firing alerts.
+expr: <string>
+
+# Alerts are considered firing once they have been returned for this long.
+# Alerts which have not yet fired for long enough are considered pending.
+[ for: <duration> | default = 0s ]
+
+# How long an alert will continue firing after the condition that triggered it
+# has cleared.
+[ keep_firing_for: <duration> | default = 0s ]
+
+# Labels to add or overwrite for each alert.
+labels:
+  [ <labelname>: <tmpl_string> ]
+
+# Annotations to add to each alert.
+annotations:
+  [ <labelname>: <tmpl_string> ]
+```
+
+### Alerting Rules
+
+Alerting rules allow you to define alert conditions based on Prometheus expression language expressions and to send notifications about firing alerts to an external service.
+Whenever the alert expression results in one or more vector elements at a given point in time, the alert counts as active for these elements' label sets.
+
+#### Defining alerting rules
+
+Alerting rules are configured in Prometheus in the same way as [recording rules](https://prometheus.io/docs/prometheus/2.47/configuration/recording_rules/).
+
+An example rules file with an alert would be:
+```yaml
+groups:
+- name: example
+  rules:
+  - alert: HighRequestLatency
+    expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
+    for: 10m
+    labels:
+      severity: page
+    annotations:
+      summary: High request latency
+```
+The optional `for` clause causes Prometheus to wait for a certain duration between first encountering a new expression output vector element and counting an alert as firing for this element.
+In this case, Prometheus will check that the alert continues to be active during each evaluation for 10 minutes before firing the alert.
+Elements that are active, but not firing yet, are in the pending state.
+Alerting rules without the `for` clause will become active on the first evaluation.
+
+The `labels` clause allows specifying a set of additional labels to be attached to the alert.
+Any existing conflicting labels will be overwritten. The label values can be templated.
+
+The `annotations` clause specifies a set of informational labels that can be used to store longer additional information such as alert descriptions or runbook links.
+The annotation values can be templated.
+
+##### Templating
+
+Label and annotation values can be templated using [console templates](https://prometheus.io/docs/visualization/consoles).
+The `$labels` variable holds the label key/value pairs of an alert instance.
+The configured external labels can be accessed via the `$externalLabels` variable.
+The `$value` variable holds the evaluated value of an alert instance.
+
+#### Inspecting alerts during runtime
+
+To manually inspect which alerts are active (pending or firing), navigate to the "Alerts" tab of your Prometheus instance.
+This will show you the exact label sets for which each defined alert is currently active.
+
+For pending and firing alerts, Prometheus also stores synthetic time series of the form `ALERTS{alertname="<alert name>", alertstate="<pending or firing>", <additional alert labels>}`.
+The sample value is set to `1` as long as the alert is in the indicated active (pending or firing) state, and the series is marked stale when this is no longer the case.
 
 ## Visualization
 
